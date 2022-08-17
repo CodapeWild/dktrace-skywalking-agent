@@ -21,7 +21,7 @@ The features include:
   },
   "service": "dktrace-skywalking-agent",
   "dump_size": 1024,
-  "random_dump": false,
+  "random_dump": true,
   "trace": []
 }
 ```
@@ -47,8 +47,8 @@ The features include:
   "error": "access deny, status code 100010",
   "tags": [
     {
-      "key": "_dd.origin",
-      "value": "rum"
+      "key": "db.type",
+      "value": "sqlite"
     }
   ],
   "children": []
