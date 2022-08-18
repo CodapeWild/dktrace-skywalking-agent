@@ -29,9 +29,12 @@ func NewGRPCReporterRelay() (go2sky.Reporter, error) {
 }
 
 func (r *GRPCReporterRelay) Boot(service string, serviceInstance string, cdsWatchers []go2sky.AgentConfigChangeWatcher) {
-	for i := range r.reporters {
-		r.reporters[i].Boot(service, serviceInstance, cdsWatchers)
-	}
+	log.Println(service)
+	log.Println(serviceInstance)
+	log.Println(cdsWatchers)
+	// for i := range r.reporters {
+	// 	r.reporters[i].Boot(service, serviceInstance, cdsWatchers)
+	// }
 }
 
 func (r *GRPCReporterRelay) Send(spans []go2sky.ReportedSpan) {
