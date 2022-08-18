@@ -72,4 +72,4 @@ The features include:
 ## Compile This Project
 
 We need [Skywalking golang api](https://github.com/apache/skywalking-goapi) and put it in the proper golang src path since lack of go.mod feature in current project.
-Run `make deps` first if you want install the dependence only.
+Run `make deps` first if you want to install the dependence only.
