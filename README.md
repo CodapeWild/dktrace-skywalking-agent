@@ -12,6 +12,8 @@ The features include:
 
 ## Config
 
+**Config structure in `config.json`**
+
 ```json
 {
   "dk_agent": "127.0.0.1:9529",
@@ -35,6 +37,8 @@ The features include:
 - `trace`: represents a Trace consists of Spans
 
 ## Span Structure
+
+**Span structure in `config.json`**
 
 `trace`\[span...\]
 
@@ -64,3 +68,8 @@ The features include:
 - `error`: error string
 - `tags`: Span meta data, imitate client tags
 - `children`: child Spans represent a subsequent function calling from current `operation`
+
+## Compile This Project
+
+We need [Skywalking golang api](https://github.com/apache/skywalking-goapi) and put it in the proper golang src path since lack of go.mod feature in current project.
+Run `make deps` first if you want install the dependence only.
