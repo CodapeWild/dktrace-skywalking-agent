@@ -54,6 +54,10 @@ type span struct {
 }
 
 func main() {
+	if cfg.Sender.Threads <= 0 || cfg.Sender.SendCount <= 0 {
+		log.Fatalln("invalid configuration for Senderd")
+	}
+
 	reporter, err := NewGRPCReporterRelay()
 	if err != nil {
 		log.Fatalln(err.Error())
