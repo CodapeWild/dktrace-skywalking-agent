@@ -3,7 +3,7 @@ GOARCH = $(shell go env GOARCH)
 NAME = $(shell basename $(CURDIR))
 # SkyApiPath = $(shell go env GOPATH)/src/skywalking.apache.org/repo
 
-default: deps build
+default:  build
 
 # deps:
 # 	@echo create directory: $(SkyApiPath)

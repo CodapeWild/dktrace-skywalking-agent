@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"sync"
 
@@ -29,27 +30,29 @@ func NewGRPCReporterRelay() (go2sky.Reporter, error) {
 }
 
 func (r *GRPCReporterRelay) Boot(service string, serviceInstance string, cdsWatchers []go2sky.AgentConfigChangeWatcher) {
-	log.Println(service)
-	log.Println(serviceInstance)
-	log.Println(cdsWatchers)
 	// for i := range r.reporters {
+	// 	log.Println(service, serviceInstance)
 	// 	r.reporters[i].Boot(service, serviceInstance, cdsWatchers)
 	// }
+	for i := range r.reporters {
+		r.reporters[i].Boot(fmt.Sprintf("%s-%d", service, i), fmt.Sprintf("%s:%d", serviceInstance, i), cdsWatchers)
+	}
 }
 
 func (r *GRPCReporterRelay) Send(spans []go2sky.ReportedSpan) {
 	wg := &sync.WaitGroup{}
 	wg.Add(cfg.Sender.Threads)
 	for i := range r.reporters {
-		go func(r go2sky.Reporter, spans []go2sky.ReportedSpan) {
+		go func(index int, spans []go2sky.ReportedSpan) {
 			defer wg.Done()
 
-			r.Send(spans)
-		}(r.reporters[i], spans)
+			for j := 0; j < cfg.Sender.SendCount; j++ {
+				r.reporters[index].Send(spans)
+				log.Printf("reporter[%d] finished send %d\n", index, j)
+			}
+		}(i, spans)
 	}
 	wg.Wait()
-
-	close(globalCloser)
 }
 
 func (r *GRPCReporterRelay) Close() {
