@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/SkyAPM/go2sky"
-	"github.com/SkyAPM/go2sky/reporter"
 )
 
 var (
@@ -55,9 +54,7 @@ type span struct {
 }
 
 func main() {
-	go startAgent()
-
-	reporter, err := reporter.NewGRPCReporter(agentAddress)
+	reporter, err := NewGRPCReporterRelay()
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
