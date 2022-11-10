@@ -1,10 +1,8 @@
-# Skywalking Agent for Datakit
+# Skywalking APM Tracing Data Simulator For [Datakit](https://github.com/GuanceCloud/datakit)
 
 **Notice:** THIS PROJECT IS STILL IN PROGRESS
 
-This tool used to send standard Skywalking tracing data to Datakit.
-
-The features include:
+This tool uses standard Skywalking APM golang-lib to simulate APM data and send to Datakit agent for correctness and pressure test purposes.
 
 - build with [go2sky Skywalking Golang lib](https://github.com/SkyAPM/go2sky)
 - customized Span data
