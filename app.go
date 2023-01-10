@@ -51,11 +51,41 @@ type span struct {
 	dumpSize  int64
 }
 
-func main() {
-	if cfg.Sender.Threads <= 0 || cfg.Sender.SendCount <= 0 {
-		log.Fatalln("invalid configuration for Senderd")
+func (sp *span) startSpanFromContext(ctx context.Context) (go2sky.Span, context.Context) {
+	var tracer = go2sky.GetGlobalTracer()
+	skyspan, ctx, err := tracer.CreateLocalSpan(ctx, go2sky.WithOperationName(sp.Operation))
+	if err != nil {
+		log.Fatalln(err.Error())
 	}
 
+	skyspan.Tag("resource.name", sp.Resource)
+	skyspan.Tag("span.type", sp.SpanType)
+	for _, tag := range sp.Tags {
+		skyspan.Tag(go2sky.Tag(tag.Key), fmt.Sprintf("%v", tag.Value))
+	}
+	if len(sp.Error) != 0 {
+		skyspan.Error(time.Now(), sp.Error)
+	}
+
+	if sp.dumpSize != 0 {
+		buf := make([]byte, sp.dumpSize)
+		rand.Read(buf)
+
+		skyspan.Tag(go2sky.Tag("_dump_data"), hex.EncodeToString(buf))
+	}
+
+	total := int64(sp.Duration * time.Millisecond)
+	d := rand.Int63n(total)
+	time.Sleep(time.Duration(d))
+	go func() {
+		time.Sleep(time.Duration(total - d))
+		skyspan.End()
+	}()
+
+	return skyspan, ctx
+}
+
+func main() {
 	reporter, err := NewGRPCReporterRelay()
 	if err != nil {
 		log.Fatalln(err.Error())
@@ -72,16 +102,16 @@ func main() {
 	log.Printf("### span count: %d\n", spanCount)
 	log.Printf("### random dump: %v", cfg.RandomDump)
 	if cfg.RandomDump {
+		if cfg.DumpSize <= 0 {
+			cfg.DumpSize = rand.Intn(924) + 100
+		}
 		log.Printf("### dump size: 0kb~%dkb", cfg.DumpSize)
 	} else {
 		log.Printf("### dump size: %dkb", cfg.DumpSize)
 	}
 
-	var fillup int64
-	if cfg.DumpSize > 0 {
-		fillup = int64(cfg.DumpSize / spanCount)
-		fillup <<= 10
-		setPerDumpSize(cfg.Trace, fillup, cfg.RandomDump)
+	if cfg.RandomDump || cfg.DumpSize > 0 {
+		setPerDumpSize(cfg.Trace, int64(cfg.DumpSize/spanCount)<<10, cfg.RandomDump)
 	}
 
 	root, ctx, children := startRootSpan(cfg.Trace)
@@ -104,107 +134,97 @@ func countSpans(trace []*span, c int) int {
 }
 
 func setPerDumpSize(trace []*span, fillup int64, isRandom bool) {
-	for i := range trace {
-		if isRandom {
+	if isRandom {
+		for i := range trace {
 			trace[i].dumpSize = rand.Int63n(fillup)
-		} else {
-			trace[i].dumpSize = fillup
+			if len(trace[i].Children) != 0 {
+				setPerDumpSize(trace[i].Children, fillup, isRandom)
+			}
 		}
-		if len(trace[i].Children) != 0 {
-			setPerDumpSize(trace[i].Children, fillup, isRandom)
+	} else {
+		for i := range trace {
+			trace[i].dumpSize = fillup
+			if len(trace[i].Children) != 0 {
+				setPerDumpSize(trace[i].Children, fillup, isRandom)
+			}
 		}
 	}
 }
 
-func startRootSpan(trace []*span) (root go2sky.Span, ctx context.Context, children []*span) {
-	var (
-		tracer = go2sky.GetGlobalTracer()
-		d      time.Duration
-		err    error
-	)
+func startRootSpan(trace []*span) (root go2sky.Span, rootCtx context.Context, children []*span) {
+	var sp *span
 	if len(trace) == 1 {
-		if root, ctx, err = tracer.CreateLocalSpan(context.TODO(), go2sky.WithOperationName(trace[0].Operation), go2sky.WithSpanType(go2sky.SpanTypeEntry)); err != nil {
-			log.Fatalln(err.Error())
-		}
-		root.Tag("resource.name", trace[0].Resource)
-		root.Tag("span.type", trace[0].SpanType)
-		for _, tag := range trace[0].Tags {
-			root.Tag(go2sky.Tag(tag.Key), fmt.Sprintf("%v", tag.Value))
-		}
-		d = trace[0].Duration * time.Millisecond
-		children = trace[0].Children
-		if len(trace[0].Error) != 0 {
-			root.Error(time.Now(), trace[0].Error)
-		}
+		sp = trace[0]
+		children = sp.Children
 	} else {
-		if root, ctx, err = tracer.CreateLocalSpan(context.Background(), go2sky.WithOperationName("startRootSpan"), go2sky.WithSpanType(go2sky.SpanTypeEntry)); err != nil {
-			log.Fatalln(err.Error())
-
-			return
+		sp = &span{
+			Operation: "startRootSpan",
+			SpanType:  "web",
+			Duration:  time.Duration(60 + rand.Intn(300)),
 		}
-		root.Tag("span.type", "web")
-		d = time.Duration(60+rand.Intn(300)) * time.Millisecond
 		children = trace
 	}
-
-	time.Sleep(d / 2)
-	go func(root go2sky.Span, d time.Duration) {
-		time.Sleep(d / 2)
-		// root.End()
-	}(root, d)
+	root, rootCtx = sp.startSpanFromContext(context.Background())
 
 	return
 }
 
+// func startRootSpan(trace []*span) (root go2sky.Span, ctx context.Context, children []*span) {
+// 	var (
+// 		tracer = go2sky.GetGlobalTracer()
+// 		d      time.Duration
+// 		err    error
+// 	)
+// 	if len(trace) == 1 {
+// 		if root, ctx, err = tracer.CreateLocalSpan(context.TODO(), go2sky.WithOperationName(trace[0].Operation), go2sky.WithSpanType(go2sky.SpanTypeEntry)); err != nil {
+// 			log.Fatalln(err.Error())
+// 		}
+// 		root.Tag("resource.name", trace[0].Resource)
+// 		root.Tag("span.type", trace[0].SpanType)
+// 		for _, tag := range trace[0].Tags {
+// 			root.Tag(go2sky.Tag(tag.Key), fmt.Sprintf("%v", tag.Value))
+// 		}
+// 		d = trace[0].Duration * time.Millisecond
+// 		children = trace[0].Children
+// 		if len(trace[0].Error) != 0 {
+// 			root.Error(time.Now(), trace[0].Error)
+// 		}
+// 	} else {
+// 		if root, ctx, err = tracer.CreateLocalSpan(context.Background(), go2sky.WithOperationName("startRootSpan"), go2sky.WithSpanType(go2sky.SpanTypeEntry)); err != nil {
+// 			log.Fatalln(err.Error())
+
+// 			return
+// 		}
+// 		root.Tag("span.type", "web")
+// 		d = time.Duration(60+rand.Intn(300)) * time.Millisecond
+// 		children = trace
+// 	}
+
+// 	time.Sleep(d / 2)
+// 	go func(root go2sky.Span, d time.Duration) {
+// 		time.Sleep(d / 2)
+// 		// root.End()
+// 	}(root, d)
+
+// 	return
+// }
+
 func orchestrator(ctx context.Context, children []*span) {
 	if len(children) == 1 {
-		ctx = startSpanFromContext(ctx, children[0])
+		_, ctx = children[0].startSpanFromContext(ctx)
 		if len(children[0].Children) != 0 {
 			orchestrator(ctx, children[0].Children)
 		}
 	} else {
 		for k := range children {
 			go func(ctx context.Context, span *span) {
-				ctx = startSpanFromContext(ctx, span)
+				_, ctx = span.startSpanFromContext(ctx)
 				if len(span.Children) != 0 {
 					orchestrator(ctx, span.Children)
 				}
 			}(ctx, children[k])
 		}
 	}
-}
-
-func getRandomHexString(n int64) string {
-	buf := make([]byte, n)
-	rand.Read(buf)
-
-	return hex.EncodeToString(buf)
-}
-
-func startSpanFromContext(ctx context.Context, span *span) context.Context {
-	var tracer = go2sky.GetGlobalTracer()
-	skyspan, ctx, err := tracer.CreateLocalSpan(ctx, go2sky.WithOperationName(span.Operation))
-	if err != nil {
-		log.Fatalln(err.Error())
-	}
-	defer skyspan.End()
-
-	skyspan.Tag("resource.name", span.Resource)
-	skyspan.Tag("span.type", span.SpanType)
-	for _, tag := range span.Tags {
-		skyspan.Tag(go2sky.Tag(tag.Key), fmt.Sprintf("%v", tag.Value))
-	}
-	if len(span.Error) != 0 {
-		skyspan.Error(time.Now(), span.Error)
-	}
-
-	if span.dumpSize != 0 {
-		skyspan.Tag(go2sky.Tag("_dump_data"), getRandomHexString(span.dumpSize))
-	}
-
-	time.Sleep(span.Duration * time.Millisecond)
-
-	return ctx
 }
 
 func init() {
@@ -219,6 +239,9 @@ func init() {
 	cfg = &config{}
 	if err = json.Unmarshal(data, cfg); err != nil {
 		log.Fatalln(err.Error())
+	}
+	if cfg.Sender == nil || cfg.Sender.Threads <= 0 || cfg.Sender.SendCount <= 0 {
+		log.Fatalln("invalid configuration for Sender")
 	}
 	if len(cfg.Trace) == 0 {
 		log.Fatalln("empty trace")
