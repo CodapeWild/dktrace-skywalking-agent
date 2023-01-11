@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"sync"
@@ -11,6 +13,7 @@ import (
 
 type GRPCReporterRelay struct {
 	reporters []go2sky.Reporter
+	trace     []go2sky.ReportedSpan
 }
 
 func NewGRPCReporterRelay() (go2sky.Reporter, error) {
@@ -26,7 +29,7 @@ func NewGRPCReporterRelay() (go2sky.Reporter, error) {
 		}
 	}
 
-	return &GRPCReporterRelay{reporters}, nil
+	return &GRPCReporterRelay{reporters: reporters}, nil
 }
 
 func (r *GRPCReporterRelay) Boot(service string, serviceInstance string, cdsWatchers []go2sky.AgentConfigChangeWatcher) {
@@ -36,24 +39,31 @@ func (r *GRPCReporterRelay) Boot(service string, serviceInstance string, cdsWatc
 }
 
 func (r *GRPCReporterRelay) Send(spans []go2sky.ReportedSpan) {
+	r.trace = append(r.trace, spans...)
+	if len(r.trace) == spanCount {
+		log.Println("all spans received, ready to send")
+		r.sendHelper()
+		// close(globalCloser)
+	}
+}
+
+func (r *GRPCReporterRelay) sendHelper() {
 	wg := &sync.WaitGroup{}
 	wg.Add(cfg.Sender.Threads)
 	for i := range r.reporters {
-		dupli := make([]go2sky.ReportedSpan, len(spans))
-		for k := range spans {
-			dupli[k] = fromReportedSpan(spans[k])
+		dupli := make([]go2sky.ReportedSpan, len(r.trace))
+		for j := range r.trace {
+			dupli[j] = fromReportedSpan(r.trace[j])
 		}
 
 		go func(index int, spans []go2sky.ReportedSpan) {
 			defer wg.Done()
 
-			for k := range spans {
-				spans[k].(*defSpan).ReNewTraceID()
-			}
+			// modifyTraceID(spans)
 
 			for j := 0; j < cfg.Sender.SendCount; j++ {
 				r.reporters[index].Send(spans)
-				log.Printf("reporter[%d] finished send %d\n", index, j)
+				log.Printf("reporter[%d] finished %dth send\n", index, j+1)
 			}
 		}(i, dupli)
 	}
@@ -68,9 +78,13 @@ func (r *GRPCReporterRelay) Close() {
 
 func modifyTraceID(trace []go2sky.ReportedSpan) {
 	oldnew := make(map[string]string)
+	buf := make([]byte, 15)
+	rand.Read(buf)
+	newtid := hex.EncodeToString(buf)
+	oldtid := trace[0].Context().TraceID
+	oldnew[oldtid] = newtid
 	for i := range trace {
-		old := trace[i].Context().TraceID
-		oldnew[old] = trace[i].(*defSpan).ReNewTraceID()
+		trace[i].Context().TraceID = newtid
 	}
 	for i := range trace {
 		for j := range trace[i].Refs() {

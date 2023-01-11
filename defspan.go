@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/hex"
-	"math/rand"
 	"time"
 
 	"github.com/SkyAPM/go2sky"
@@ -12,7 +10,7 @@ import (
 )
 
 type defSpan struct {
-	ctx           *go2sky.SegmentContext
+	ctx           go2sky.SegmentContext
 	spanType      agentv3.SpanType
 	refs          []*propagation.SpanContext
 	startTime     time.Time
@@ -27,10 +25,10 @@ type defSpan struct {
 }
 
 func fromReportedSpan(src go2sky.ReportedSpan) *defSpan {
-	return &defSpan{
-		ctx:           src.Context(),
+	desc := &defSpan{
+		ctx:           *src.Context(),
 		spanType:      src.SpanType(),
-		refs:          src.Refs(),
+		refs:          make([]*propagation.SpanContext, len(src.Refs())),
 		startTime:     time.UnixMilli(src.StartTime()),
 		endTime:       time.UnixMilli(src.EndTime()),
 		operationName: src.OperationName(),
@@ -41,9 +39,25 @@ func fromReportedSpan(src go2sky.ReportedSpan) *defSpan {
 		logs:          src.Logs(),
 		isErr:         src.IsError(),
 	}
+	for i := range desc.refs {
+		desc.refs[i] = &propagation.SpanContext{
+			TraceID:               src.Refs()[i].TraceID,
+			ParentSegmentID:       src.Refs()[i].ParentSegmentID,
+			ParentService:         src.Refs()[i].ParentService,
+			ParentServiceInstance: src.Refs()[i].ParentServiceInstance,
+			ParentEndpoint:        src.Refs()[i].ParentEndpoint,
+			AddressUsedAtClient:   src.Refs()[i].AddressUsedAtClient,
+			ParentSpanID:          src.Refs()[i].ParentSpanID,
+			Sample:                src.Refs()[i].Sample,
+			Valid:                 src.Refs()[i].Valid,
+			CorrelationContext:    src.Refs()[i].CorrelationContext,
+		}
+	}
+
+	return desc
 }
 
-func (dfsp *defSpan) Context() *go2sky.SegmentContext { return dfsp.ctx }
+func (dfsp *defSpan) Context() *go2sky.SegmentContext { return &dfsp.ctx }
 
 func (dfsp *defSpan) Refs() []*propagation.SpanContext { return dfsp.refs }
 
@@ -66,11 +80,3 @@ func (dfsp *defSpan) Tags() []*commonv3.KeyStringValuePair { return dfsp.tags }
 func (dfsp *defSpan) Logs() []*agentv3.Log { return dfsp.logs }
 
 func (dfsp *defSpan) ComponentID() int32 { return dfsp.compID }
-
-func (dfsp *defSpan) ReNewTraceID() string {
-	buf := make([]byte, 20)
-	rand.Read(buf)
-	dfsp.ctx.TraceID = hex.EncodeToString(buf)
-
-	return dfsp.ctx.TraceID
-}

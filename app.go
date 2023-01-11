@@ -18,6 +18,7 @@ var (
 	cfg          *config
 	globalCloser = make(chan struct{})
 	agentAddress = "127.0.0.1:"
+	spanCount    = 0
 )
 
 type sender struct {
@@ -53,8 +54,15 @@ type span struct {
 
 func (sp *span) startSpanFromContext(ctx context.Context) (go2sky.Span, context.Context) {
 	var tracer = go2sky.GetGlobalTracer()
-	skyspan, ctx, err := tracer.CreateLocalSpan(ctx, go2sky.WithOperationName(sp.Operation))
-	if err != nil {
+	if tracer == nil {
+		log.Fatalln("global tracer not set")
+	}
+
+	var (
+		skyspan go2sky.Span
+		err     error
+	)
+	if skyspan, ctx, err = tracer.CreateLocalSpan(ctx, go2sky.WithOperationName(sp.Operation)); err != nil {
 		log.Fatalln(err.Error())
 	}
 
@@ -90,7 +98,6 @@ func main() {
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
-	defer reporter.Close()
 
 	tracer, err := go2sky.NewTracer(cfg.Service, go2sky.WithReporter(reporter))
 	if err != nil {
@@ -98,7 +105,11 @@ func main() {
 	}
 	go2sky.SetGlobalTracer(tracer)
 
-	spanCount := countSpans(cfg.Trace, 0)
+	spanCount = countSpans(cfg.Trace, 0)
+	// no root span in config file
+	if len(cfg.Trace) != 1 {
+		spanCount += 1
+	}
 	log.Printf("### span count: %d\n", spanCount)
 	log.Printf("### random dump: %v", cfg.RandomDump)
 	if cfg.RandomDump {
@@ -114,10 +125,8 @@ func main() {
 		setPerDumpSize(cfg.Trace, int64(cfg.DumpSize/spanCount)<<10, cfg.RandomDump)
 	}
 
-	root, ctx, children := startRootSpan(cfg.Trace)
+	_, ctx, children := startRootSpan(cfg.Trace)
 	orchestrator(ctx, children)
-	time.Sleep(3 * time.Second)
-	root.End()
 
 	<-globalCloser
 }
@@ -152,62 +161,53 @@ func setPerDumpSize(trace []*span, fillup int64, isRandom bool) {
 }
 
 func startRootSpan(trace []*span) (root go2sky.Span, rootCtx context.Context, children []*span) {
-	var sp *span
+	tracer := go2sky.GetGlobalTracer()
+	if tracer == nil {
+		log.Fatalln("global tracer not set")
+	}
+
+	var (
+		resource, opName, errString string
+		tags                        []tag
+		dtotal                      time.Duration
+	)
 	if len(trace) == 1 {
-		sp = trace[0]
-		children = sp.Children
+		opName = trace[0].Operation
+		errString = trace[0].Error
+		tags = trace[0].Tags
+		dtotal = trace[0].Duration
+		children = trace[0].Children
 	} else {
-		sp = &span{
-			Operation: "startRootSpan",
-			SpanType:  "web",
-			Duration:  time.Duration(60 + rand.Intn(300)),
-		}
+		opName = "startRootSpan"
+		dtotal = time.Duration(60 + rand.Intn(300))
 		children = trace
 	}
-	root, rootCtx = sp.startSpanFromContext(context.Background())
+
+	var err error
+	root, rootCtx, err = tracer.CreateLocalSpan(context.Background(), go2sky.WithOperationName(opName), go2sky.WithSpanType(go2sky.SpanTypeEntry))
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+
+	root.Tag("resource.name", resource)
+	root.Tag("span.type", "web")
+	if errString != "" {
+		root.Error(time.Now(), errString)
+	}
+	for i := range tags {
+		root.Tag(go2sky.Tag(tags[i].Key), fmt.Sprintf("%v", tags[i].Value))
+	}
+
+	dtotal *= time.Millisecond
+	d := rand.Int63n(int64(dtotal))
+	time.Sleep(time.Duration(d))
+	go func() {
+		time.Sleep(dtotal - time.Duration(d))
+		root.End()
+	}()
 
 	return
 }
-
-// func startRootSpan(trace []*span) (root go2sky.Span, ctx context.Context, children []*span) {
-// 	var (
-// 		tracer = go2sky.GetGlobalTracer()
-// 		d      time.Duration
-// 		err    error
-// 	)
-// 	if len(trace) == 1 {
-// 		if root, ctx, err = tracer.CreateLocalSpan(context.TODO(), go2sky.WithOperationName(trace[0].Operation), go2sky.WithSpanType(go2sky.SpanTypeEntry)); err != nil {
-// 			log.Fatalln(err.Error())
-// 		}
-// 		root.Tag("resource.name", trace[0].Resource)
-// 		root.Tag("span.type", trace[0].SpanType)
-// 		for _, tag := range trace[0].Tags {
-// 			root.Tag(go2sky.Tag(tag.Key), fmt.Sprintf("%v", tag.Value))
-// 		}
-// 		d = trace[0].Duration * time.Millisecond
-// 		children = trace[0].Children
-// 		if len(trace[0].Error) != 0 {
-// 			root.Error(time.Now(), trace[0].Error)
-// 		}
-// 	} else {
-// 		if root, ctx, err = tracer.CreateLocalSpan(context.Background(), go2sky.WithOperationName("startRootSpan"), go2sky.WithSpanType(go2sky.SpanTypeEntry)); err != nil {
-// 			log.Fatalln(err.Error())
-
-// 			return
-// 		}
-// 		root.Tag("span.type", "web")
-// 		d = time.Duration(60+rand.Intn(300)) * time.Millisecond
-// 		children = trace
-// 	}
-
-// 	time.Sleep(d / 2)
-// 	go func(root go2sky.Span, d time.Duration) {
-// 		time.Sleep(d / 2)
-// 		// root.End()
-// 	}(root, d)
-
-// 	return
-// }
 
 func orchestrator(ctx context.Context, children []*span) {
 	if len(children) == 1 {
