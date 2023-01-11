@@ -10,7 +10,7 @@ import (
 )
 
 type defSpan struct {
-	ctx           go2sky.SegmentContext
+	ctx           *go2sky.SegmentContext
 	spanType      agentv3.SpanType
 	refs          []*propagation.SpanContext
 	startTime     time.Time
@@ -26,7 +26,15 @@ type defSpan struct {
 
 func fromReportedSpan(src go2sky.ReportedSpan) *defSpan {
 	desc := &defSpan{
-		ctx:           *src.Context(),
+		ctx: &go2sky.SegmentContext{
+			TraceID:            src.Context().TraceID,
+			SegmentID:          src.Context().SegmentID,
+			SpanID:             src.Context().SpanID,
+			ParentSpanID:       src.Context().ParentSpanID,
+			ParentSegmentID:    src.Context().ParentSegmentID,
+			FirstSpan:          src.Context().FirstSpan,
+			CorrelationContext: src.Context().CorrelationContext,
+		},
 		spanType:      src.SpanType(),
 		refs:          make([]*propagation.SpanContext, len(src.Refs())),
 		startTime:     time.UnixMilli(src.StartTime()),
@@ -57,7 +65,7 @@ func fromReportedSpan(src go2sky.ReportedSpan) *defSpan {
 	return desc
 }
 
-func (dfsp *defSpan) Context() *go2sky.SegmentContext { return &dfsp.ctx }
+func (dfsp *defSpan) Context() *go2sky.SegmentContext { return dfsp.ctx }
 
 func (dfsp *defSpan) Refs() []*propagation.SpanContext { return dfsp.refs }
 

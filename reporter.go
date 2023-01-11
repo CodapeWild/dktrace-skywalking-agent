@@ -57,13 +57,13 @@ func (r *GRPCReporterRelay) sendHelper() {
 			dupli[j] = fromReportedSpan(r.trace[j])
 		}
 
-		go func(index int, spans []go2sky.ReportedSpan) {
+		go func(index int, trace []go2sky.ReportedSpan) {
 			defer wg.Done()
 
-			modifyTraceID(spans)
+			modifyTraceID(trace)
 
 			for j := 0; j < cfg.Sender.SendCount; j++ {
-				r.reporters[index].Send(spans)
+				r.reporters[index].Send(trace)
 				log.Printf("reporter[%d] finished %dth send\n", index, j+1)
 			}
 		}(i, dupli)
@@ -78,20 +78,20 @@ func (r *GRPCReporterRelay) Close() {
 }
 
 func modifyTraceID(trace []go2sky.ReportedSpan) {
-	oldnew := make(map[string]string)
+	// oldnew := make(map[string]string)
 	buf := make([]byte, 15)
 	rand.Read(buf)
 	newtid := hex.EncodeToString(buf)
-	oldtid := trace[0].Context().TraceID
-	oldnew[oldtid] = newtid
+	// oldtid := trace[0].Context().TraceID
+	// oldnew[oldtid] = newtid
 	for i := range trace {
-		trace[i].Context().TraceID = newtid
+		trace[i].(*defSpan).ctx.TraceID = newtid
 	}
-	for i := range trace {
-		for j := range trace[i].Refs() {
-			if newtid, ok := oldnew[trace[i].Refs()[j].TraceID]; ok {
-				trace[i].Refs()[j].TraceID = newtid
-			}
-		}
-	}
+	// for i := range trace {
+	// 	for j := range trace[i].Refs() {
+	// 		if newtid, ok := oldnew[trace[i].Refs()[j].TraceID]; ok {
+	// 			trace[i].Refs()[j].TraceID = newtid
+	// 		}
+	// 	}
+	// }
 }
