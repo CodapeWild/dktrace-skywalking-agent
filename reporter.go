@@ -42,6 +42,7 @@ func (r *GRPCReporterRelay) Send(spans []go2sky.ReportedSpan) {
 	r.trace = append(r.trace, spans...)
 	if len(r.trace) == spanCount {
 		log.Println("all spans received, ready to send")
+
 		r.sendHelper()
 		// close(globalCloser)
 	}
@@ -59,7 +60,7 @@ func (r *GRPCReporterRelay) sendHelper() {
 		go func(index int, spans []go2sky.ReportedSpan) {
 			defer wg.Done()
 
-			// modifyTraceID(spans)
+			modifyTraceID(spans)
 
 			for j := 0; j < cfg.Sender.SendCount; j++ {
 				r.reporters[index].Send(spans)

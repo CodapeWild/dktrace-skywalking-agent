@@ -125,8 +125,10 @@ func main() {
 		setPerDumpSize(cfg.Trace, int64(cfg.DumpSize/spanCount)<<10, cfg.RandomDump)
 	}
 
-	_, ctx, children := startRootSpan(cfg.Trace)
+	root, ctx, children := startRootSpan(cfg.Trace)
 	orchestrator(ctx, children)
+	time.Sleep(3 * time.Second)
+	root.End()
 
 	<-globalCloser
 }
@@ -169,17 +171,14 @@ func startRootSpan(trace []*span) (root go2sky.Span, rootCtx context.Context, ch
 	var (
 		resource, opName, errString string
 		tags                        []tag
-		dtotal                      time.Duration
 	)
 	if len(trace) == 1 {
 		opName = trace[0].Operation
 		errString = trace[0].Error
 		tags = trace[0].Tags
-		dtotal = trace[0].Duration
 		children = trace[0].Children
 	} else {
 		opName = "startRootSpan"
-		dtotal = time.Duration(60 + rand.Intn(300))
 		children = trace
 	}
 
@@ -197,13 +196,13 @@ func startRootSpan(trace []*span) (root go2sky.Span, rootCtx context.Context, ch
 		root.Tag(go2sky.Tag(tags[i].Key), fmt.Sprintf("%v", tags[i].Value))
 	}
 
-	dtotal *= time.Millisecond
-	d := rand.Int63n(int64(dtotal))
-	time.Sleep(time.Duration(d))
-	go func() {
-		time.Sleep(dtotal - time.Duration(d))
-		root.End()
-	}()
+	// dtotal *= time.Millisecond
+	// d := rand.Int63n(int64(dtotal))
+	// time.Sleep(time.Duration(d))
+	// go func() {
+	// 	time.Sleep(dtotal - time.Duration(d))
+	// 	root.End()
+	// }()
 
 	return
 }
