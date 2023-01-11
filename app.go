@@ -184,8 +184,7 @@ func startRootSpan(trace []*span) (root go2sky.Span, rootCtx context.Context, ch
 	}
 
 	var err error
-	root, rootCtx, err = tracer.CreateLocalSpan(context.Background(), go2sky.WithOperationName(opName), go2sky.WithSpanType(go2sky.SpanTypeEntry))
-	if err != nil {
+	if root, rootCtx, err = tracer.CreateLocalSpan(context.Background(), go2sky.WithOperationName(opName), go2sky.WithSpanType(go2sky.SpanTypeEntry)); err != nil {
 		log.Fatalln(err.Error())
 	}
 
